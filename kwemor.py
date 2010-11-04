@@ -1,12 +1,13 @@
+#! /usr/bin/env python
+
 from oauth import oauth
 from oauthtwitter import OAuthApi
 
-import pprint
-import httplib
-import socket
-import re
+from httplib import HTTPConnection, socket
+from smtplib import SMTP
+from optparse import OptionParser, OptionValueError
 
-import sys,os
+import sys,os, logging
 
 
 class Kwemor:
@@ -16,71 +17,36 @@ class Kwemor:
     oauth_token_secret = "QTeyNirnXhwcZJuXYEIUocK9uGZjBc47ynQ7rWLIpwQ"
     oauth_verifier = "9822792"
     twitter = ""
-
-    def __init__(self): # constructor
-        print "Kwemore, the website monitor"
-        self.authenticate_app()
+    parser = ''
     
-    #authenticate user
+    def __init__(self): # constructor
+        print "Kwemor, the website monitor"
+            
+    #authenticate twitter
     def authenticate_app(self):
-
         self.twitter = OAuthApi(self.consumer_key, self.consumer_secrete,
         self.oauth_token, self.oauth_token_secret)
         user_timeline = self.twitter.GetUserTimeline();
-        #pp = pprint.PrettyPrinter(indent=4)
-        #pp.pprint(user_timeline)
-    # print how to use kwemor from the commandline
-    def usage(self):
-        print 'Usage: Kwemor \n\tpython kwemor.py --<arguments>\n\n\tArguments'
-        print '\t\t--adduser:\n\t\tuse this option to add a new user.'
-        print '\n\t\te.g: python kwemore.py --adduser <twitter_username>\n\n'
-        print '\t\t--auth:\n\t\tuse this option to authenticate the kwemor app.'
-        print '\n\t\te.g: python kwemor.py --auth \n\n' 
-
-    
+       
     # send DM to users 
-    def post_dm(self):
-        text = 'Your website is so up Mr.'
+    def post_dm(self,text):
+        #authenticate twitter 
+        self.authenticate_app()
+
         for user in self.read_lines('users.txt'):
             if not user == "":
                 dm = self.twitter.SendDM(user,text)
-
-        # user = 'lorenzocabrini'
-        # text = 'Your website is so up Mr.'
-        # dm = self.twitter.SendDM(user,text)
-        # pp = pprint.PrettyPrinter(indent=4)
-        # pp.pprint(dm)
-    
-    # send http get request to see if a website is up
-    def send_http_req(self,url, path='/'):
-        try:
-            conn = httplib.HTTPConnection(url)
-            conn.request("HEAD", path)
-            if re.match("^[23]\d\d$", str(conn.getresponse().status)):
-                return True
-        except StandardError:
-            return None
-    
-    def is_website_online(host):
-        try:
-            socket.gethostbyname(host)
-        except socket.gaierror:
-            return False
-        else:
-            return True
 
     # Read content of a file
     def read_lines(self, path):
         f = open(path, 'r')
         content = f.readlines()
-        
         f.close()
         
         return content
     
     #write content to a file
-    def write_lines(self, content):
-        path = 'users.txt'    
+    def write_lines(self, content, path):
         # recreate a new file and append the content to it
         f = open(path, 'a')
         f.write(content)
@@ -88,33 +54,124 @@ class Kwemor:
         
     #add a new user
     def add_user(self,username):
-        self.write_lines(username)
-
+        self.write_lines(username,'users.txt')
         print "User %s" % username + " added."
+    
+    #send status of a website via email notifications
+    def email_alert(self,message, status,emailaddress):
+        username = "henry@ushahidi.com"
+        password = "godles123"
+        fromaddress = 'henry@ushahidi.com'
+        toaddress = emailaddress
 
-    def remove_user(self):
-        content = self.read_lines('users.txt')
-        pp = pprint.PrettyPrinter(indent=4)
-        pp.pprint(content)
+        server = SMTP('smtp.gmail.com:587')
+        server.starttls()
+        server.login(username, password)
+        server.sendmail(fromaddress, toaddress, 'Subject: %s\r\n%s' % (status, message))
+        server.quit()
+
+    #get status of a website
+    def get_website_status(self,url):
+        response = self.get_response(url)
+        
+        try:
+            status_code = getattr(response, 'status')
+            if status_code in (200,302):
+                return 'up'
+        except AttributeError:
+            pass
+        return 'down'
+
+    #get the response from the website
+    def get_response(self,url):
+        '''Return response object form URL'''
+        try:
+            conn = HTTPConnection(str(url))
+            conn.request("HEAD", "/")
+            return conn.getresponse()
+        except socket.error:
+            return None
+        except:
+            logging.error('Bad URL: %s' % url)
+            exit(1)
+
+    #get url headers
+    def get_headers(self,url):
+        response = self.get_response(url)
+        try:
+            return getattr(response, 'getheaders')
+        except AttributeError:
+            return 'Headers unavailable'
+
+    # check website state
+    def check_website(self,url):
+        status = self.get_website_status(url)
+        status_msg = '%s is %s' % (url,status)
+    
+        if status == 'down':
+            ''' email and DM tweet '''
+            self.email_alert(str(self.get_headers(url)), status_msg,'henry@addhen.org')
+            post_dm(status_msg)
+            logging.error('%s' % status_msg)
+        else:
+
+            logging.error('%s' % status_msg)
+
+    #fetch url from a file
+    def get_urls_from_file(self,filename):
+        try:
+            return self.read_lines(filename)
+        except:
+            logging.error('Unable to read %s' % filename)
+            return []
+
+    #add an url to a file
+    def add_url(self,url):
+        self.write_lines(url,'urls.txt')
+        print "User %s" % (url + " added.")
+
+    # get cmd options
+    def get_command_line_options(self):
+        '''Sets up optparse and command line options'''
+        usage = "Usage: %prog [options] url"
+        version = "%prog 1.0"
+        self.parser = OptionParser(usage=usage,version=version)
+        self.parser.add_option("-a","--adduser",
+                dest="adduser",help="Add a new twitter handle")
+        self.parser.add_option("-f", "--from-file", dest="fromfile",
+                help="Import urls from a text file separated by newline.")
+        self.parser.add_option("-u","--addurl", dest="addurl",
+                help="Add a new URL to the URL file")
+
+        return self.parser.parse_args()
+
+def main():
+    # Get argument flags and command options
+    kwemor = Kwemor()
+    (options,args) = kwemor.get_command_line_options()
+
+    # Print out usage if no arguments are present
+    #if len(args) == 0 :
+     #   kwemor.parser.print_help()
+
+    urls = args
+
+    if options.fromfile:
+        urls = kwemor.get_urls_from_file(options.fromfile)
+
+    elif options.adduser:
+        kwemor.add_user(options.adduser)
+
+    elif options.addurl:
+        kwemor.add_url(options.addurl)
+
+    else:
+        urls = args
+
+    for url in urls:
+        print url;
+        kwemor.check_website(url.strip("\r\n"))
 
 if __name__ == '__main__':
-    kwemor = Kwemor()
-    
-    x = len(sys.argv)
-    
-    if x < 3:
-        kwemor.usage()
-    
-    else:
-        if sys.argv[1] == '--adduser': # --add a new user
-            kwemor.add_user(sys.argv[2]) 
-   
-        elif sys.argv[1] == '--dm': # --post a dm
-            kwemor.post_dm()
+    main()
 
-        elif sys.arg[1] == '--rmuser': # --remove an user
-            kwemor.remove_user()
-
-        else:
-            print "Error: Unknown argument\n"
-            kwemor.usage()
