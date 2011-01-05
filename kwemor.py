@@ -11,11 +11,12 @@ import sys,os, logging
 
 
 class Kwemor:
-    consumer_key = "yyx9XQKu3MjeudFnYbSMA"
-    consumer_secrete = "pmH6FvKZptKjJ2tytY0OunzDvGfDPD0GHG0YNdU"
-    oauth_token = "7415812-lTWSLvH3fTFC2lhWAtYJObBIiNze2yYvlBg3PQ9G8a"
-    oauth_token_secret = "QTeyNirnXhwcZJuXYEIUocK9uGZjBc47ynQ7rWLIpwQ"
-    oauth_verifier = "9822792"
+    #TODO:// make it possible to read these sensitive info from a config file instead
+    consumer_key = ""
+    consumer_secrete = ""
+    oauth_token = ""
+    oauth_token_secret = ""
+    oauth_verifier = ""
     twitter = ""
     parser = ''
     
@@ -59,9 +60,10 @@ class Kwemor:
     
     #send status of a website via email notifications
     def email_alert(self,message, status,emailaddress):
-        username = "henry@ushahidi.com"
-        password = "godles123"
-        fromaddress = 'henry@ushahidi.com'
+        #TODO:// Read these from a config file
+        username = ""
+        password = ""
+        fromaddress = ''
         toaddress = emailaddress
 
         server = SMTP('smtp.gmail.com:587')
@@ -110,11 +112,11 @@ class Kwemor:
     
         if status == 'down':
             ''' email and DM tweet '''
-            self.email_alert(str(self.get_headers(url)), status_msg,'henry@addhen.org')
-            post_dm(status_msg)
+            self.email_alert(str(self.get_headers(url)), status_msg,
+                    '')
+            self.post_dm(status_msg)
             logging.error('%s' % status_msg)
         else:
-
             logging.error('%s' % status_msg)
 
     #fetch url from a file
@@ -150,10 +152,6 @@ def main():
     kwemor = Kwemor()
     (options,args) = kwemor.get_command_line_options()
 
-    # Print out usage if no arguments are present
-    #if len(args) == 0 :
-     #   kwemor.parser.print_help()
-
     urls = args
 
     if options.fromfile:
@@ -169,7 +167,6 @@ def main():
         urls = args
 
     for url in urls:
-        print url;
         kwemor.check_website(url.strip("\r\n"))
 
 if __name__ == '__main__':
